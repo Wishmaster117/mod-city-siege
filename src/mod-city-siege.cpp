@@ -351,6 +351,111 @@ static uint32 g_NextSiegeTime = 0;
 static std::unordered_map<uint32, std::vector<ObjectGuid>> g_WaypointVisualizations; // cityId -> vector of creature GUIDs
 
 // -----------------------------------------------------------------------------
+// LOCALIZATION
+// -----------------------------------------------------------------------------
+
+enum CitySiegeTextId
+{
+    CITY_SIEGE_TEXT_PRE_WARNING = 0,
+    CITY_SIEGE_TEXT_SIEGE_START,
+    CITY_SIEGE_TEXT_SIEGE_END,
+    CITY_SIEGE_TEXT_WIN_DEFENDERS,
+    CITY_SIEGE_TEXT_WIN_ATTACKERS,
+    CITY_SIEGE_TEXT_REWARD_GENERIC,
+    CITY_SIEGE_TEXT_MAX
+};
+
+// Default (fallback) texts in enUS
+static char const* const g_CitySiegeTextEnUS[CITY_SIEGE_TEXT_MAX] =
+{
+    // CITY_SIEGE_TEXT_PRE_WARNING
+    "|cffff0000[City Siege]|r |cffFFFF00WARNING!|r A siege force is preparing to attack %s! The battle will begin in %u seconds. Defenders, prepare yourselves!",
+    // CITY_SIEGE_TEXT_SIEGE_START
+    "|cffff0000[City Siege]|r The city of %s is under attack! Defenders are needed!",
+    // CITY_SIEGE_TEXT_SIEGE_END
+    "|cff00ff00[City Siege]|r The siege of %s has ended!",
+    // CITY_SIEGE_TEXT_WIN_DEFENDERS
+    "|cff00ff00[City Siege]|r The %s have successfully defended %s!",
+    // CITY_SIEGE_TEXT_WIN_ATTACKERS
+    "|cffff0000[City Siege]|r The %s have conquered %s!",
+    // CITY_SIEGE_TEXT_REWARD_GENERIC (à plugger plus tard dans DistributeRewards)
+    "|cff00ff00[City Siege]|r You have been rewarded for defending %s!",
+};
+
+// French translations (other locales will fall back to enUS)
+static char const* const g_CitySiegeTextFrFR[CITY_SIEGE_TEXT_MAX] =
+{
+    // CITY_SIEGE_TEXT_PRE_WARNING
+    "|cffff0000[Siège de Cité]|r |cffFFFF00ALERTE !|r Une armée se prépare à attaquer %s ! La bataille commencera dans %u secondes. Défenseurs, préparez-vous !",
+    // CITY_SIEGE_TEXT_SIEGE_START
+    "|cffff0000[Siège de Cité]|r La cité de %s est attaquée ! Des défenseurs sont nécessaires !",
+    // CITY_SIEGE_TEXT_SIEGE_END
+    "|cff00ff00[Siège de Cité]|r Le siège de %s est terminé !",
+    // CITY_SIEGE_TEXT_WIN_DEFENDERS
+    "|cff00ff00[Siège de Cité]|r Les %s ont réussi à défendre %s !",
+    // CITY_SIEGE_TEXT_WIN_ATTACKERS
+    "|cffff0000[Siège de Cité]|r Les %s ont conquis %s !",
+    // CITY_SIEGE_TEXT_REWARD_GENERIC
+    "|cff00ff00[Siège de Cité]|r Vous avez été récompensé(e) pour avoir défendu %s !",
+};
+
+// Returns the localized text for the given locale and text id.
+static char const* GetCitySiegeText(LocaleConstant locale, CitySiegeTextId textId)
+{
+    if (textId < 0 || textId >= CITY_SIEGE_TEXT_MAX)
+        return "";
+
+    switch (locale)
+    {
+        case LOCALE_frFR:
+            if (g_CitySiegeTextFrFR[textId] && *g_CitySiegeTextFrFR[textId])
+                return g_CitySiegeTextFrFR[textId];
+            break;
+        default:
+            break;
+    }
+
+    // Fallback: enUS
+    return g_CitySiegeTextEnUS[textId];
+}
+
+// Small helpers to iterate over players
+template <class Callback>
+static void ForEachOnlinePlayer(Callback&& callback)
+{
+    auto const& sessions = sWorld->GetAllSessions();
+    for (auto const& pair : sessions)
+    {
+        if (WorldSession* session = pair.second)
+        {
+            if (Player* player = session->GetPlayer())
+                callback(*player, *session);
+        }
+    }
+}
+
+template <class Callback>
+static void ForEachPlayerInCityRadius(CityData const& city, Callback&& callback)
+{
+    Map* map = sMapMgr->FindMap(city.mapId, 0);
+    if (!map)
+        return;
+
+    Map::PlayerList const& players = map->GetPlayers();
+    for (auto itr = players.begin(); itr != players.end(); ++itr)
+    {
+        if (Player* player = itr->GetSource())
+        {
+            if (player->GetDistance(city.centerX, city.centerY, city.centerZ) > g_AnnounceRadius)
+                continue;
+
+            if (WorldSession* session = player->GetSession())
+                callback(*player, *session);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // HELPER FUNCTIONS
 // -----------------------------------------------------------------------------
 
@@ -536,11 +641,11 @@ void LoadCitySiegeConfiguration()
     g_WeatherGrade = sConfigMgr->GetOption<float>("CitySiege.Weather.Grade", 0.8f);
 
     // Music settings
-    g_MusicEnabled = sConfigMgr->GetOption<bool>("CitySiege.Music.Enabled", true);
-    g_RPMusicId = sConfigMgr->GetOption<uint32>("CitySiege.Music.RP", 11803);        // The Burning Legion
-    g_CombatMusicId = sConfigMgr->GetOption<uint32>("CitySiege.Music.Combat", 11804); // Battle of Mount Hyjal
-    g_VictoryMusicId = sConfigMgr->GetOption<uint32>("CitySiege.Music.Victory", 16039); // Invincible
-    g_DefeatMusicId = sConfigMgr->GetOption<uint32>("CitySiege.Music.Defeat", 14127);   // Wrath of the Lich King
+    g_MusicEnabled   = sConfigMgr->GetOption<bool>("CitySiege.Music.Enabled", true);
+    g_RPMusicId      = sConfigMgr->GetOption<uint32>("CitySiege.Music.RPMusicId", 11803);        // The Burning Legion
+    g_CombatMusicId  = sConfigMgr->GetOption<uint32>("CitySiege.Music.CombatMusicId", 11804); // Battle of Mount Hyjal
+    g_VictoryMusicId = sConfigMgr->GetOption<uint32>("CitySiege.Music.VictoryMusicId", 16039); // Invincible
+    g_DefeatMusicId  = sConfigMgr->GetOption<uint32>("CitySiege.Music.DefeatMusicId", 14127);   // Wrath of the Lich King
 
     // Load spawn locations for each city
     g_Cities[CITY_STORMWIND].spawnX = sConfigMgr->GetOption<float>("CitySiege.Stormwind.SpawnX", -9161.16f);
@@ -706,54 +811,33 @@ CityData* SelectRandomCity()
  */
 void AnnounceSiege(const CityData& city, bool isStart)
 {
-    std::string message;
-    if (isStart)
-    {
-        message = g_MessageSiegeStart;
-        size_t pos = message.find("{CITYNAME}");
-        if (pos != std::string::npos)
-        {
-            message.replace(pos, 10, city.name);
-        }
-    }
-    else
-    {
-        message = g_MessageSiegeEnd;
-        size_t pos = message.find("{CITYNAME}");
-        if (pos != std::string::npos)
-        {
-            message.replace(pos, 10, city.name);
-        }
-    }
+    CitySiegeTextId textId = isStart ? CITY_SIEGE_TEXT_SIEGE_START : CITY_SIEGE_TEXT_SIEGE_END;
 
     if (g_AnnounceRadius == 0)
     {
-        // Announce to the entire world
-        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, message);
+        // Global announcement, localized per player
+        ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
+        {
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, textId);
+            ChatHandler(&session).PSendSysMessage(format, city.name.c_str());
+        });
     }
     else
     {
-        // Announce to players in range
-        Map* map = sMapMgr->FindMap(city.mapId, 0);
-        if (map)
+        // Announcement limited to players near the city
+        ForEachPlayerInCityRadius(city, [&](Player& /*player*/, WorldSession& session)
         {
-            Map::PlayerList const& players = map->GetPlayers();
-            for (auto itr = players.begin(); itr != players.end(); ++itr)
-            {
-                if (Player* player = itr->GetSource())
-                {
-                    if (player->GetDistance(city.centerX, city.centerY, city.centerZ) <= g_AnnounceRadius)
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage(message.c_str());
-                    }
-                }
-            }
-        }
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, textId);
+            ChatHandler(&session).PSendSysMessage(format, city.name.c_str());
+        });
     }
 
     if (g_DebugMode)
     {
-        LOG_INFO("server.loading", "[City Siege] {}", message);
+        LOG_INFO("server.loading", "[City Siege] AnnounceSiege: {} (city: {})",
+            isStart ? "start" : "end", city.name);
     }
 }
 
@@ -1974,9 +2058,25 @@ void StartSiegeEvent(int targetCityId = -1)
         }
     }
 
-    // Announce siege is coming (before RP phase)
-    std::string preAnnounce = "|cffff0000[City Siege]|r |cffFFFF00WARNING!|r A siege force is preparing to attack " + city->name + "! The battle will begin in " + std::to_string(g_CinematicDelay) + " seconds. Defenders, prepare yourselves!";
-    sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, preAnnounce);
+    // Announce siege is coming (before RP phase) - localized
+    if (g_AnnounceRadius == 0)
+    {
+        ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
+        {
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
+            ChatHandler(&session).PSendSysMessage(format, city->name.c_str(), g_CinematicDelay);
+        });
+    }
+    else
+    {
+        ForEachPlayerInCityRadius(*city, [&](Player& /*player*/, WorldSession& session)
+        {
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
+            ChatHandler(&session).PSendSysMessage(format, city->name.c_str(), g_CinematicDelay);
+        });
+    }
 
     g_ActiveSieges.push_back(newEvent);
 
@@ -2113,50 +2213,47 @@ void EndSiegeEvent(SiegeEvent& event, int winningTeam = -1)
     bool isAllianceCity = (event.cityId == CITY_STORMWIND || event.cityId == CITY_IRONFORGE || 
                           event.cityId == CITY_DARNASSUS || event.cityId == CITY_EXODAR);
 
-    // Announce the winner (using same logic as AnnounceSiege)
-    std::string winnerAnnouncement;
+    // Localized winner announcement
+    std::string factionName;
+    CitySiegeTextId winnerTextId;
     if (defendersWon)
     {
         // Defenders won - announce defending faction victory
-        std::string defendingFaction = isAllianceCity ? "Alliance" : "Horde";
-        winnerAnnouncement = "|cff00ff00[City Siege]|r The " + defendingFaction + " has successfully defended " + city.name + "! Victory to the defenders!";
+        factionName = isAllianceCity ? "Alliance" : "Horde";
+        winnerTextId = CITY_SIEGE_TEXT_WIN_DEFENDERS;
     }
     else
     {
         // Attackers won (city leader killed) - announce attacking faction victory
-        std::string attackingFaction = isAllianceCity ? "Horde" : "Alliance";
-        winnerAnnouncement = "|cffff0000[City Siege]|r The " + attackingFaction + " has conquered " + city.name + "! The city has fallen!";
+        factionName = isAllianceCity ? "Horde" : "Alliance";
+        winnerTextId = CITY_SIEGE_TEXT_WIN_ATTACKERS;
     }
-    
-    // Send announcement (same logic as AnnounceSiege)
+
     if (g_AnnounceRadius == 0)
     {
-        // Announce to the entire world
-        sWorldSessionMgr->SendServerMessage(SERVER_MSG_STRING, winnerAnnouncement);
+        // Global winner announcement, localized per player
+        ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
+        {
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, winnerTextId);
+            ChatHandler(&session).PSendSysMessage(format, factionName.c_str(), city.name.c_str());
+        });
     }
     else
     {
-        // Announce to players in range
-        Map* mapForAnnounce = sMapMgr->FindMap(city.mapId, 0);
-        if (mapForAnnounce)
+        // Winner announcement limited to players near the city
+        ForEachPlayerInCityRadius(city, [&](Player& /*player*/, WorldSession& session)
         {
-            Map::PlayerList const& players = mapForAnnounce->GetPlayers();
-            for (auto itr = players.begin(); itr != players.end(); ++itr)
-            {
-                if (Player* player = itr->GetSource())
-                {
-                    if (player->GetDistance(city.centerX, city.centerY, city.centerZ) <= g_AnnounceRadius)
-                    {
-                        ChatHandler(player->GetSession()).PSendSysMessage(winnerAnnouncement.c_str());
-                    }
-                }
-            }
-        }
+            LocaleConstant locale = session.GetSessionDbLocaleIndex();
+            char const* format = GetCitySiegeText(locale, winnerTextId);
+            ChatHandler(&session).PSendSysMessage(format, factionName.c_str(), city.name.c_str());
+        });
     }
-    
+
     if (g_DebugMode)
     {
-        LOG_INFO("server.loading", "[City Siege] {}", winnerAnnouncement);
+        LOG_INFO("server.loading", "[City Siege] Winner announcement: faction={} city={} defendersWon={}",
+            factionName, city.name, defendersWon);
     }
 
     // Play victory or defeat music if enabled
