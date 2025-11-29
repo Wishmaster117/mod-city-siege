@@ -37,6 +37,7 @@
 #include "CellImpl.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
+#include "StringFormat.h"
 #include "Weather.h"
 #include "WeatherMgr.h"
 #include "MiscPackets.h"
@@ -830,8 +831,10 @@ void AnnounceSiege(const CityData& city, bool isStart)
         ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, textId);
-            ChatHandler(&session).PSendSysMessage(format, city.name.c_str());
+            char const* fmt = GetCitySiegeText(locale, textId);
+            // Format the string with city name, then send as plain text
+            std::string msg = Acore::StringFormat(fmt, city.name.c_str());
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
     else
@@ -840,8 +843,9 @@ void AnnounceSiege(const CityData& city, bool isStart)
         ForEachPlayerInCityRadius(city, [&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, textId);
-            ChatHandler(&session).PSendSysMessage(format, city.name.c_str());
+            char const* fmt = GetCitySiegeText(locale, textId);
+            std::string msg = Acore::StringFormat(fmt, city.name.c_str());
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
 
@@ -2069,14 +2073,16 @@ void StartSiegeEvent(int targetCityId = -1)
         }
     }
 
-    // Announce siege is coming (before RP phase) - localized
+    // Announce siege is coming (before RP phase) - localized and formatted
     if (g_AnnounceRadius == 0)
     {
         ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
-            ChatHandler(&session).PSendSysMessage(format, city->name.c_str(), g_CinematicDelay);
+            char const* fmt = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
+            // %s -> city name, %u -> cinematic delay
+            std::string msg = Acore::StringFormat(fmt, city->name.c_str(), g_CinematicDelay);
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
     else
@@ -2084,8 +2090,9 @@ void StartSiegeEvent(int targetCityId = -1)
         ForEachPlayerInCityRadius(*city, [&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
-            ChatHandler(&session).PSendSysMessage(format, city->name.c_str(), g_CinematicDelay);
+            char const* fmt = GetCitySiegeText(locale, CITY_SIEGE_TEXT_PRE_WARNING);
+            std::string msg = Acore::StringFormat(fmt, city->name.c_str(), g_CinematicDelay);
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
 
@@ -2246,8 +2253,10 @@ void EndSiegeEvent(SiegeEvent& event, int winningTeam = -1)
         ForEachOnlinePlayer([&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, winnerTextId);
-            ChatHandler(&session).PSendSysMessage(format, factionName.c_str(), city.name.c_str());
+            char const* fmt = GetCitySiegeText(locale, winnerTextId);
+            // %s (1) -> faction name, %s (2) -> city name
+            std::string msg = Acore::StringFormat(fmt, factionName.c_str(), city.name.c_str());
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
     else
@@ -2256,8 +2265,9 @@ void EndSiegeEvent(SiegeEvent& event, int winningTeam = -1)
         ForEachPlayerInCityRadius(city, [&](Player& /*player*/, WorldSession& session)
         {
             LocaleConstant locale = session.GetSessionDbLocaleIndex();
-            char const* format = GetCitySiegeText(locale, winnerTextId);
-            ChatHandler(&session).PSendSysMessage(format, factionName.c_str(), city.name.c_str());
+            char const* fmt = GetCitySiegeText(locale, winnerTextId);
+            std::string msg = Acore::StringFormat(fmt, factionName.c_str(), city.name.c_str());
+            ChatHandler(&session).PSendSysMessage("%s", msg.c_str());
         });
     }
 
