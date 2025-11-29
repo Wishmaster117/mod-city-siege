@@ -40,6 +40,7 @@
 #include "Weather.h"
 #include "WeatherMgr.h"
 #include "MiscPackets.h"
+#include "WorldSession.h"
 #include <vector>
 #include <unordered_map>
 #include <string>
@@ -421,37 +422,47 @@ static char const* GetCitySiegeText(LocaleConstant locale, CitySiegeTextId textI
 
 // Small helpers to iterate over players
 template <class Callback>
-static void ForEachOnlinePlayer(Callback&& callback)
+static void ForEachOnlinePlayer(Callback callback)
 {
-    auto const& sessions = sWorld->GetAllSessions();
-    for (auto const& pair : sessions)
+    // Use WorldSessionMgr instead of sWorld (IWorld has no GetAllSessions)
+    WorldSessionMgr::SessionMap const& sessions = sWorldSessionMgr->GetAllSessions();
+
+    for (WorldSessionMgr::SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
     {
-        if (WorldSession* session = pair.second)
-        {
-            if (Player* player = session->GetPlayer())
-                callback(*player, *session);
-        }
+        WorldSession* session = itr->second;
+        if (!session)
+            continue;
+
+        Player* player = session->GetPlayer();
+        if (!player)
+            continue;
+
+        callback(*player, *session);
     }
 }
 
 template <class Callback>
-static void ForEachPlayerInCityRadius(CityData const& city, Callback&& callback)
+static void ForEachPlayerInCityRadius(CityData const& city, Callback callback)
 {
     Map* map = sMapMgr->FindMap(city.mapId, 0);
     if (!map)
         return;
 
     Map::PlayerList const& players = map->GetPlayers();
-    for (auto itr = players.begin(); itr != players.end(); ++itr)
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
     {
-        if (Player* player = itr->GetSource())
-        {
-            if (player->GetDistance(city.centerX, city.centerY, city.centerZ) > g_AnnounceRadius)
-                continue;
+        Player* player = itr->GetSource();
+        if (!player)
+            continue;
 
-            if (WorldSession* session = player->GetSession())
-                callback(*player, *session);
-        }
+        if (player->GetDistance(city.centerX, city.centerY, city.centerZ) > g_AnnounceRadius)
+            continue;
+
+        WorldSession* session = player->GetSession();
+        if (!session)
+            continue;
+
+        callback(*player, *session);
     }
 }
 
